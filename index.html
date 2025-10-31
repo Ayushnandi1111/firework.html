@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fireworks Generator Pro (Optimized)</title>
+<style>
+    body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #0d0d1a;
+        font-family: 'Poppins', sans-serif;
+        color: #fff;
+    }
+    canvas {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+    }
+    #controlPanel {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.45);
+        padding: 10px 20px;
+        border-radius: 15px;
+        border: 1px solid rgba(255,255,255,0.2);
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        z-index: 10;
+        transition: 0.4s;
+        max-width: 90%;
+    }
+    #controlPanel.minimized {
+        top: -100%;
+        opacity: 0;
+        pointer-events: none;
+    }
+    button, select {
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+        border: 1px solid rgba(255,255,255,0.3);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: 0.2s;
+    }
+    button:hover, select:hover { background: rgba(255,255,255,0.25); }
+    .neon-title {
+        font-size: 1.5rem;
+        width: 100%;
+        text-align: center;
+        color: #fff;
+        /* OPTIMIZATION: Reduced shadow complexity for faster rendering */
+        text-shadow: 0 0 12px #0ff, 0 0 25px #f0f;
+        margin-bottom: 5px;
+    }
+    #scoreDisplay {
+        position: fixed;
+        top: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 1.2rem;
+        color: #a0f0ff;
+        text-shadow: 0 0 10px #0ff;
+        display: none;
+    }
+    #celebrationText, #celebrationBanner {
+        position: fixed;
+        width: 100%;
+        text-align: center;
+        color: #fff;
+        opacity: 0;
+        transition: opacity 1s, transform 1s;
+        z-index: 5;
+    }
+    #celebrationText { 
+        font-size: 3rem; 
+        top: 40%; 
+        /* OPTIMIZATION: Simplified shadow */
+        text-shadow: 0 0 20px #0ff; 
+        transform: scale(0.8);
+    }
+    #celebrationBanner { 
+        font-size: 1.8rem; 
+        top: 20px; 
+        text-shadow: 0 0 15px #0ff; 
+        transform: translateY(-20px);
+    }
+    .showText {
+        opacity: 1 !important;
+        transform: scale(1) translateY(0) !important;
+    }
+
+    footer {
+        position: fixed;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.9rem;
+        color: rgba(255,255,255,0.6);
+        text-shadow: 0 0 8px #00f0ff;
+        opacity: 0;
+        animation: fadeIn 3s forwards 2s;
+    }
+    @keyframes fadeIn { to { opacity: 1; } }
+
+    #showPanelBtn {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.3);
+        border-radius: 10px;
+        padding: 8px 12px;
+        color: #fff;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: 0.3s;
+        z-index: 20;
+        display: none;
+    }
+    #showPanelBtn:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+
+<div id="controlPanel">
+    <div class="neon-title">🔥 Fireworks Generator Pro 🔥</div>
+    <button id="aestheticBtn">Aesthetic Mode</button>
+    <button id="gameBtn">Game Mode</button>
+    <button id="realisticBtn">Realistic Mode</button>
+    <button id="celebrationBtn">Celebration Mode</button>
+    <select id="celebrationType">
+        <option value="newyear">🎆 Happy New Year</option>
+        <option value="congrats">🎉 Congratulations</option>
+    </select>
+    <select id="yearSelect"></select>
+    <select id="textStyleSelect">
+        <option value="center">Center Animated</option>
+        <option value="banner">Top Banner</option>
+    </select>
+    <button id="startCelebration">Start Celebration</button>
+    <button id="stopCelebration">Stop</button>
+    <button id="toggleSound">🔊</button>
+    <button id="minimizePanel">🧩 Minimize</button>
+</div>
+
+<button id="showPanelBtn">⚙️ Show Controls</button>
+
+<div id="scoreDisplay">Score: 0</div>
+<div id="celebrationText"></div>
+<div id="celebrationBanner"></div>
+<canvas id="fireworksCanvas"></canvas>
+
+<footer>© 2025 AYUSH NANDI. All rights reserved.</footer>
+
+<audio id="bgMusic" loop preload="auto" src="https://cdn.pixabay.com/download/audio/2023/02/28/audio_0bdf9b234b.mp3?filename=festive-background-music-142592.mp3"></audio>
+
+<script>
+const canvas = document.getElementById('fireworksCanvas');
+const ctx = canvas.getContext('2d');
+let fireworks = [], particles = [];
+const gravity = 0.03, friction = 0.95; // Keeping friction, but it's not as effective without trails. You might want to lower it slightly.
+let currentMode = 'aesthetic', score = 0, soundOn = true, celebrationInterval = null;
+
+const music = document.getElementById('bgMusic');
+music.volume = 0.3;
+
+function resizeCanvas(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+window.addEventListener('resize', resizeCanvas); resizeCanvas();
+
+const launchSound = new Audio('https://cdn.pixabay.com/download/audio/2022/03/15/audio_aa5675f1f9.mp3?filename=firework-launch-1-17577.mp3');
+const explodeSound = new Audio('https://cdn.pixabay.com/download/audio/2021/09/15/audio_6ad1fa8b0d.mp3?filename=firework-explosion-1-6870.mp3');
+function random(a,b){return Math.random()*(b-a)+a;}
+function randomColor(h=random(0,360)){return`hsl(${h},100%,50%)`;}
+
+class Particle {
+    constructor(x,y,color,speed,angle){
+        this.x=x; this.y=y; this.color=color;
+        this.size=random(1.5,3.5);
+        this.vel={x:Math.cos(angle)*speed,y:Math.sin(angle)*speed};
+        this.alpha=1; this.decay=random(0.015,0.03);
+        // OPTIMIZATION: Removed this.trail = [];
+    }
+    update(){
+        // OPTIMIZATION: Removed trail logic
+        // this.trail.push({x:this.x,y:this.y});
+        // if(this.trail.length>5)this.trail.shift();
+        
+        // OPTIMIZATION: Gravity and friction are now applied more strongly.
+        // You can adjust 'friction' (e.g., to 0.97) to make particles fly longer.
+        this.vel.x*=friction; 
+        this.vel.y*=friction; 
+        this.vel.y+=gravity;
+        
+        this.x+=this.vel.x; this.y+=this.vel.y; 
+        this.alpha-=this.decay;
+    }
+    draw(){
+        // OPTIMIZATION: Removed ctx.save() and ctx.restore()
+        // and removed the loop for drawing trails.
+        // We now draw only ONE circle per particle.
+        ctx.globalAlpha = this.alpha;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+class Firework {
+    constructor(sx,sy,ex,ey){
+        this.x=sx; this.y=sy; this.tx=ex; this.ty=ey;
+        const dx=ex-sx, dy=ey-sy;
+        this.dist=Math.sqrt(dx**2+dy**2);
+        const ang=Math.atan2(dy,dx);
+        const sp=Math.min(this.dist/20,12);
+        this.vel={x:Math.cos(ang)*sp,y:Math.sin(ang)*sp};
+        this.travel=0; this.color=randomColor();
+    }
+    update(){
+        if(this.travel>=this.dist){ this.explode(); return true; }
+        this.x+=this.vel.x; this.y+=this.vel.y;
+        this.travel+=Math.sqrt(this.vel.x**2+this.vel.y**2);
+        return false;
+    }
+    draw(){ 
+        ctx.beginPath(); 
+        ctx.arc(this.x,this.y,2.5,0,Math.PI*2);
+        ctx.fillStyle=this.color; 
+        // OPTIMIZATION: Removed expensive shadow blur
+        // ctx.shadowColor=this.color; 
+        // ctx.shadowBlur=10; 
+        ctx.fill(); 
+    }
+    explode(){
+        if(soundOn) explodeSound.play();
+        // OPTIMIZATION: Slightly reduced max particle count to further help performance
+        const count=random(50,120), baseHue=parseInt(this.color.split('(')[1]);
+        for(let i=0;i<count;i++){
+            const sp=random(2,6), ang=random(0,Math.PI*2);
+            const hue=(baseHue+random(-20,20))%360;
+            particles.push(new Particle(this.x,this.y,randomColor(hue),sp,ang));
+        }
+        if(currentMode==='game'){ score++; document.getElementById('scoreDisplay').textContent=`Score: ${score}`;}
+    }
+}
+
+function animate(){
+    requestAnimationFrame(animate);
+    ctx.globalCompositeOperation='destination-out';
+    ctx.fillStyle='rgba(13,13,26,0.2)'; // This line creates the "trail" effect
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.globalCompositeOperation='lighter';
+
+    for(let i=fireworks.length-1;i>=0;i--){ 
+        if(fireworks[i].update()) fireworks.splice(i,1); 
+        else fireworks[i].draw(); 
+    }
+    
+    // We must set globalAlpha *before* the loop if we don't use save/restore
+    // But since each particle has its *own* alpha, we set it in Particle.draw()
+    for(let i=particles.length-1;i>=0;i--){ 
+        if(particles[i].alpha <= particles[i].decay) {
+            particles.splice(i,1);
+        } else { 
+            particles[i].update(); 
+            particles[i].draw(); 
+        }
+    }
+    
+    // OPTIMIZATION: Reset globalAlpha to 1 after drawing all particles
+    // so it doesn't interfere with other drawing ops.
+    ctx.globalAlpha = 1;
+}
+animate();
+
+function launch(e){ if(soundOn) launchSound.play(); fireworks.push(new Firework(canvas.width/2,canvas.height,e.clientX,e.clientY)); }
+canvas.addEventListener('click', e=>{ if(currentMode!=='celebration') launch(e); });
+
+const scoreDisplay=document.getElementById('scoreDisplay');
+const panel=document.getElementById('controlPanel');
+const showPanelBtn=document.getElementById('showPanelBtn');
+const yearSelect=document.getElementById('yearSelect');
+for(let y=2025;y<=3000;y++){const o=document.createElement('option');o.value=y;o.textContent=y;yearSelect.appendChild(o);}
+
+document.getElementById('aestheticBtn').onclick=()=>{currentMode='aesthetic';scoreDisplay.style.display='none';stopCelebration();};
+document.getElementById('gameBtn').onclick=()=>{currentMode='game';scoreDisplay.style.display='block';score=0;stopCelebration();};
+document.getElementById('realisticBtn').onclick=()=>{currentMode='realistic';scoreDisplay.style.display='none';stopCelebration();};
+document.getElementById('celebrationBtn').onclick=()=>{currentMode='celebration';scoreDisplay.style.display='none';};
+
+const cText=document.getElementById('celebrationText');
+const cBanner=document.getElementById('celebrationBanner');
+
+function startCelebration(){
+    stopCelebration(); // Stop any previous one first
+    currentMode='celebration'; // Ensure mode is set
+    const type=document.getElementById('celebrationType').value;
+    const year=yearSelect.value;
+    const style=document.getElementById('textStyleSelect').value;
+    const msg=type==='newyear'?`🎆 Happy New Year ${year}! 🎆`:`🎉 Congratulations! 🎉`;
+
+    if(style==='center'){
+        cText.textContent=msg;
+        cText.classList.add('showText');
+        cBanner.classList.remove('showText');
+    } else {
+        cBanner.textContent=msg;
+        cBanner.classList.add('showText');
+        cText.classList.remove('showText');
+    }
+
+    if(soundOn) music.play();
+    celebrationInterval=setInterval(()=>{
+        const x=random(100,canvas.width-100), y=random(100,canvas.height/2);
+        fireworks.push(new Firework(canvas.width/2,canvas.height,x,y));
+    },500);
+}
+function stopCelebration(){
+    if (celebrationInterval) clearInterval(celebrationInterval);
+    celebrationInterval = null;
+    cText.classList.remove('showText');
+    cBanner.classList.remove('showText');
+    music.pause(); music.currentTime=0;
+}
+document.getElementById('startCelebration').onclick=startCelebration;
+document.getElementById('stopCelebration').onclick=stopCelebration;
+
+const soundBtn=document.getElementById('toggleSound');
+soundBtn.onclick=()=>{
+    soundOn=!soundOn;
+    soundBtn.textContent=soundOn?'🔊':'🔇';
+    if(!soundOn){music.pause();} else if(currentMode==='celebration' && celebrationInterval){music.play();}
+};
+
+document.getElementById('minimizePanel').onclick=()=>{
+    panel.classList.add('minimized');
+    showPanelBtn.style.display='block';
+};
+showPanelBtn.onclick=()=>{
+    panel.classList.remove('minimized');
+    showPanelBtn.style.display='none';
+};
+</script>
+</body>
+</html>
